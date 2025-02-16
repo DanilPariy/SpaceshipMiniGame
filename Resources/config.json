@@ -1,0 +1,11 @@
+{
+    "spaceship": {
+        "linearDamping": 1.0,
+        "mass": 1.0,
+        "acceleration": 500.0,
+        "bulletCooldown": 0.3
+    },
+    "bullet": {
+        "acceleration": 500.0
+    }
+}
