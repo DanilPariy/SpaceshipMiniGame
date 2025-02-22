@@ -70,6 +70,26 @@ void GameScene::parseConfig()
         const auto& bulletJson = document["bullet"];
         parseFloat(bulletJson, "acceleration", mBulletConfig.acceleration);
     }
+
+    if (document.HasMember("asteroid") && document["asteroid"].IsArray())
+    {
+        const auto& asteroidConfig = document["asteroid"];
+        for (auto it = asteroidConfig.Begin(); it != asteroidConfig.End(); it++)
+        {
+            const auto& stageObj = *it;
+            if (stageObj.IsObject() && stageObj.HasMember("scale") && stageObj.HasMember("mass") && stageObj.HasMember("points"))
+            {
+                sAsteroidStageConfig config(
+                    {
+                        .scale = stageObj["scale"].GetFloat(),
+                        .mass = stageObj["mass"].GetFloat(),
+                        .points = stageObj["points"].GetUint()
+                    }
+                );
+                mAsteroidStages.insert(std::make_pair(config.scale, std::move(config)));
+            }
+        }
+    }
 }
 
 bool GameScene::init()
@@ -99,6 +119,7 @@ bool GameScene::init()
     auto contactListener = EventListenerPhysicsContact::create();
     contactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
     contactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
+    contactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
     _eventDispatcher->addEventListenerWithSceneGraphPriority(contactListener, this);
 
     schedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid), 1.5f);
@@ -171,11 +192,42 @@ void GameScene::createSpaceship()
     }
 }
 
-void GameScene::spawnAsteroid(float dt)
+void GameScene::spawnAsteroid(float)
 {
+    const auto visibleSize = Director::getInstance()->getVisibleSize();
+    auto asteroidSprite = Sprite::create("asteroid.png");
+    if (asteroidSprite)
+    {
+        auto index = RandomHelper::random_int(0u, mAsteroidStages.size() - 1);
+        auto stage = std::next(mAsteroidStages.begin(), index);
+        auto scale = stage->second.scale;
+        asteroidSprite->setScale(scale);
+        asteroidSprite->setTag(index);
+        // Випадкова стартова позиція за межами екрану
+        Vec2 spawnPosition = Vec2(visibleSize.width * RandomHelper::random_int(0, 1), visibleSize.height * RandomHelper::random_int(0, 1));
+        asteroidSprite->setPosition(spawnPosition);
+        this->addChild(asteroidSprite);
+
+        auto asteroidBody = PhysicsBody::createCircle(asteroidSprite->getContentSize().width / 2);
+        if (asteroidBody)
+        {
+            asteroidSprite->setPhysicsBody(asteroidBody);
+            asteroidBody->setDynamic(true);
+            asteroidBody->setGravityEnable(false);
+            asteroidBody->setMass(stage->second.mass);
+            asteroidBody->setCategoryBitmask(asteroidBitMask);
+            asteroidBody->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+            asteroidBody->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+
+            // Напрямок руху до центра екрану
+            Vec2 direction = (Vec2(visibleSize.width / 2, visibleSize.height / 2) - spawnPosition).getNormalized();
+            float speed = RandomHelper::random_real(100.0f, 250.0f);
+            asteroidBody->setVelocity(direction * speed);
+        }
+    }
 }
 
-void GameScene::update(float aDelta)
+void GameScene::update(float)
 {
     if (mSpaceship)
     {
@@ -202,6 +254,29 @@ void GameScene::update(float aDelta)
         body->applyForce(force);
     }
     adjustSpaceshipRotation();
+
+    for (auto it = mDestroyedAsteroidsCallbacks.begin(); it != mDestroyedAsteroidsCallbacks.end(); )
+    {
+        auto asteroid = it->first;
+        auto callback = it->second;
+        if (!callback)
+        {
+            it = mDestroyedAsteroidsCallbacks.erase(it);
+            continue;
+        }
+
+        auto sceneChildren = getChildren();
+        auto findIt = sceneChildren.find(asteroid);
+        if (findIt == sceneChildren.end())
+        {
+            callback();
+            it = mDestroyedAsteroidsCallbacks.erase(it);
+        }
+        else
+        {
+            it++;
+        }
+    }
 }
 
 void GameScene::onKeyPressed(EventKeyboard::KeyCode aKeyCode, Event* aEvent)
@@ -252,15 +327,162 @@ void GameScene::onMouseUp(cocos2d::EventMouse* aEvent)
     mIsMousePressed = false;
 }
 
-bool GameScene::onContactBegin(cocos2d::PhysicsContact& contact)
+void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const cocos2d::Vec2 aContactPoint)
 {
-    return false;
+    auto index = aAsteroidData.tag;
+    if (index == 0)
+        return;
+
+    index--;
+    auto stage = std::next(mAsteroidStages.begin(), index);
+    auto scale = stage->second.scale;
+    auto mass = stage->second.mass;
+
+    Vec2 asteroidVelocity = aAsteroidData.velocity;
+    Vec2 v2 = aOtherBody.velocity;
+    float asteroidMass = aAsteroidData.mass;
+    float m2 = aOtherBody.mass;
+    Vec2 asteroidPosition = aAsteroidData.position;
+    Vec2 p2 = aOtherBody.position;
+
+    auto calculateVelocityAfterCollision = [](Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2)
+    {
+        Vec2 dp = p1 - p2;
+        float dpLengthSq = dp.lengthSquared();
+        if (dpLengthSq == 0)
+            return v1;
+
+        Vec2 dv = v1 - v2;
+        float dot = dv.dot(dp);
+        Vec2 newVelocity = v1 - (2 * m2 / (m1 + m2)) * (dot / dpLengthSq) * dp;
+        return newVelocity;
+    };
+
+    Vec2 velocity1 = calculateVelocityAfterCollision(asteroidVelocity, v2, asteroidMass, m2, asteroidPosition, p2);
+    Vec2 velocity2 = calculateVelocityAfterCollision(v2, asteroidVelocity, m2, asteroidMass, p2, asteroidPosition);
+
+    const Vec2 contactVector{ Vec2(aContactPoint - asteroidPosition).getNormalized() };
+    const Vec2 normal(-contactVector.y, contactVector.x);
+
+    auto createSmallAsteroid = [this, scale, index, normal, asteroidPosition, mass](const Vec2 aVelocity, const bool aIsAddNormal)
+    {
+        auto smallAsteroid = Sprite::create("asteroid.png");
+        if (smallAsteroid)
+        {
+            const float spacingCoef = 1.1f;
+            smallAsteroid->setScale(scale);
+            smallAsteroid->setTag(index);
+            auto halfWidth = smallAsteroid->getContentSize().width / 2;
+            auto pos = asteroidPosition + halfWidth * normal * spacingCoef * (aIsAddNormal ? 1 : -1);
+            smallAsteroid->setPosition(pos);
+            this->addChild(smallAsteroid);
+            auto body = PhysicsBody::createCircle(halfWidth);
+            if (body)
+            {
+                body->setDynamic(true);
+                body->setGravityEnable(false);
+                body->setMass(mass);
+                body->setCategoryBitmask(asteroidBitMask);
+                body->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+                body->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+                body->setVelocity(aVelocity);
+                smallAsteroid->setPhysicsBody(body);
+            }
+        }
+    };
+
+    createSmallAsteroid(velocity1, true);
+    createSmallAsteroid(velocity2, false);
 }
 
-bool GameScene::onContactSeparate(cocos2d::PhysicsContact& contact)
+bool GameScene::onContactPreSolve(cocos2d::PhysicsContact& aContact, cocos2d::PhysicsContactPreSolve& aSolve)
 {
-    auto shapeA = contact.getShapeA();
-    auto shapeB = contact.getShapeB();
+    if (!aContact.getShapeA() || !aContact.getShapeB())
+        return false;
+
+    auto bodyA = aContact.getShapeA()->getBody();
+    auto bodyB = aContact.getShapeB()->getBody();
+
+    return true;
+}
+
+bool GameScene::onContactBegin(cocos2d::PhysicsContact& aContact)
+{
+    auto shapeA = aContact.getShapeA();
+    auto shapeB = aContact.getShapeB();
+    if (!shapeA || !shapeB)
+        return false;
+
+    auto bodyA = shapeA->getBody();
+    auto bodyB = shapeB->getBody();
+    if (!bodyA || !bodyB)
+        return false;
+
+    auto contactPoint = aContact.getContactData()->points[0];
+
+    if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == spaceshipBitMask)
+    {
+        // gameover
+    }
+    else if (bodyA->getCategoryBitmask() == spaceshipBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
+    {
+        // gameover
+    }
+    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
+    {
+        //splitAsteroid(bodyA, bodyB, contactPoint);
+        //splitAsteroid(bodyB, bodyA, contactPoint);
+        //if (bodyA->getNode())
+        //    bodyA->getNode()->removeFromParent();
+        //if (bodyB->getNode())
+        //    bodyB->getNode()->removeFromParent();
+    }
+    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == bulletBitMask)
+    {
+        if (bodyA->getNode() && bodyB->getNode())
+        {
+            sAsteroidContactData asteroidData(*bodyA, bodyA->getNode()->getTag());
+            sContactData otherData(*bodyB);
+            mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, otherData, contactPoint);
+            bodyA->getNode()->removeFromParent();
+            bodyB->getNode()->removeFromParent();
+        }
+        else if (bodyA->getNode())
+        {
+            bodyA->getNode()->removeFromParent();
+        }
+        else if (bodyB->getNode())
+        {
+            bodyB->getNode()->removeFromParent();
+        }
+    }
+    else if (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
+    {
+        if (bodyA->getNode() && bodyB->getNode())
+        {
+            sAsteroidContactData asteroidData(*bodyB, bodyB->getNode()->getTag());
+            sContactData otherData(*bodyA);
+            mDestroyedAsteroidsCallbacks[bodyB->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, otherData, contactPoint);
+            bodyA->getNode()->removeFromParent();
+            bodyB->getNode()->removeFromParent();
+        }
+        else if (bodyA->getNode())
+        {
+            bodyA->getNode()->removeFromParent();
+        }
+        else if (bodyB->getNode())
+        {
+            bodyB->getNode()->removeFromParent();
+        }
+    }
+
+    return true;
+}
+
+bool GameScene::onContactSeparate(cocos2d::PhysicsContact& aContact)
+{
+    auto shapeA = aContact.getShapeA();
+    auto shapeB = aContact.getShapeB();
 
     auto bodyA = shapeA->getBody();
     auto bodyB = shapeB->getBody();
@@ -268,19 +490,15 @@ bool GameScene::onContactSeparate(cocos2d::PhysicsContact& contact)
     if (!bodyA || !bodyB)
         return false;
 
-    if ((bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == boundsBitmask)
-        || (bodyA->getCategoryBitmask() == boundsBitmask && bodyB->getCategoryBitmask() == bulletBitMask))
+    if (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == boundsBitmask)
     {
-        if (bodyA->getCategoryBitmask() == bulletBitMask)
-        {
-            if (bodyA->getNode())
-                bodyA->getNode()->removeFromParent();
-        }
-        if (bodyB->getCategoryBitmask() == bulletBitMask)
-        {
-            if (bodyB->getNode())
-                bodyB->getNode()->removeFromParent();
-        }
+        if (bodyA->getNode())
+            bodyA->getNode()->removeFromParent();
+    }
+    else if (bodyA->getCategoryBitmask() == boundsBitmask && bodyB->getCategoryBitmask() == bulletBitMask)
+    {
+        if (bodyB->getNode())
+            bodyB->getNode()->removeFromParent();
     }
 
     return true;
@@ -306,7 +524,8 @@ void GameScene::shootBullet(Vec2 aTarget)
             if (bulletBody)
             {
                 bulletBody->setCategoryBitmask(bulletBitMask);
-                bulletBody->setContactTestBitmask(boundsBitmask);
+                bulletBody->setCollisionBitmask(asteroidBitMask);
+                bulletBody->setContactTestBitmask(boundsBitmask | asteroidBitMask);
                 bulletBody->setVelocity(velocity);
                 bulletBody->setGravityEnable(false);
                 bulletBody->setRotationEnable(false);

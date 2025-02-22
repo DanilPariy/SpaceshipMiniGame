@@ -34,6 +34,44 @@ private:
         }
     };
 
+    struct sAsteroidStageConfig
+    {
+        float scale;
+        float mass;
+        unsigned points;
+    };
+
+    struct sContactData
+    {
+        cocos2d::Vec2 position;
+        cocos2d::Vec2 velocity;
+        float mass;
+
+        sContactData(cocos2d::PhysicsBody& aBody)
+            : position(aBody.getPosition())
+            , velocity(aBody.getVelocity())
+            , mass(aBody.getMass())
+        {
+        }
+        virtual ~sContactData()
+        {
+        }
+    };
+
+    struct sAsteroidContactData : public sContactData
+    {
+        int tag;
+
+        sAsteroidContactData(cocos2d::PhysicsBody& aBody, const int aTag)
+            : sContactData(aBody)
+            , tag(aTag)
+        {
+        }
+        virtual ~sAsteroidContactData()
+        {
+        }
+    };
+
 private:
     cocos2d::Sprite* mSpaceship;
     std::unordered_set<cocos2d::EventKeyboard::KeyCode> mPressedKeys;
@@ -42,6 +80,8 @@ private:
     sBulletConfig mBulletConfig;
     bool mIsMousePressed;
     bool mIsCanShoot;
+    std::map<float, sAsteroidStageConfig> mAsteroidStages;
+    std::unordered_map<cocos2d::Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
 
 private:
     bool init() override;
@@ -56,12 +96,14 @@ private:
     void onMouseMove(cocos2d::EventMouse* aEvent);
     void onMouseDown(cocos2d::EventMouse* aEvent);
     void onMouseUp(cocos2d::EventMouse* aEvent);
-    bool onContactBegin(cocos2d::PhysicsContact& contact);
-    bool onContactSeparate(cocos2d::PhysicsContact& contact);
+    bool onContactBegin(cocos2d::PhysicsContact& aCntact);
+    bool onContactSeparate(cocos2d::PhysicsContact& aContact);
+    bool onContactPreSolve(cocos2d::PhysicsContact& aContact, cocos2d::PhysicsContactPreSolve& aSolve);
 
-    void shootBullet(cocos2d::Vec2 target);
+    void shootBullet(cocos2d::Vec2 aTarget);
     void adjustSpaceshipRotation();
-    void spawnAsteroid(float dt);
+    void spawnAsteroid(float);
+    void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const cocos2d::Vec2 aContactPoint);
 
 public:
     GameScene();

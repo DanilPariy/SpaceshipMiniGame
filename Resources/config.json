@@ -7,5 +7,22 @@
     },
     "bullet": {
         "acceleration": 500.0
-    }
+    },
+    "asteroid": [
+        {
+            "scale": 2.0,
+            "mass": 40.0,
+            "points": 1
+        },
+        {
+            "scale": 1.0,
+            "mass": 20.0,
+            "points": 4
+        },
+        {
+            "scale": 0.5,
+            "mass": 10.0,
+            "points": 16
+        }
+    ]
 }
