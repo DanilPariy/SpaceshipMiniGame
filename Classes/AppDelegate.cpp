@@ -24,7 +24,7 @@
 
 #include "AppDelegate.h"
 #include "HelloWorldScene.h"
-#include "GameScene.h"
+#include "MainMenuScene.h"
 
 // #define USE_AUDIO_ENGINE 1
 // #define USE_SIMPLE_AUDIO_ENGINE 1
@@ -104,7 +104,7 @@ bool AppDelegate::applicationDidFinishLaunching() {
     register_all_packages();
 
     // run
-    director->runWithScene(GameScene::createScene());
+    director->runWithScene(MainMenuScene::create());
 
     return true;
 }

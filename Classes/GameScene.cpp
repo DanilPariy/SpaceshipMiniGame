@@ -1,9 +1,9 @@
 #include "GameScene.h"
+
 #include "json/document.h"
 #include "json/filereadstream.h"
 #include "json/reader.h"
-
-USING_NS_CC;
+#include "GameOverLayer.h"
 
 const int spaceshipBitMask = 0x01;
 const int asteroidBitMask = 0x02;
@@ -17,6 +17,9 @@ GameScene::GameScene()
     , mIsPaused(false)
     , mPauseLabel(nullptr)
     , mBlackoutLayer(nullptr)
+    , mContactListener(nullptr)
+    , mMouseListener(nullptr)
+    , mKeyboardListener(nullptr)
 {
 
 }
@@ -72,6 +75,7 @@ void GameScene::parseConfig()
     {
         const auto& bulletJson = document["bullet"];
         parseFloat(bulletJson, "acceleration", mBulletConfig.acceleration);
+        parseFloat(bulletJson, "mass", mBulletConfig.mass);
     }
 
     if (document.HasMember("asteroid") && document["asteroid"].IsArray())
@@ -108,22 +112,31 @@ bool GameScene::init()
     createBackground();
     createSpaceship();
 
-    auto keyboardListener = EventListenerKeyboard::create();
-    keyboardListener->onKeyPressed = CC_CALLBACK_2(GameScene::onKeyPressed, this);
-    keyboardListener->onKeyReleased = CC_CALLBACK_2(GameScene::onKeyReleased, this);
-    _eventDispatcher->addEventListenerWithSceneGraphPriority(keyboardListener, this);
+    mKeyboardListener = EventListenerKeyboard::create();
+    if (mKeyboardListener)
+    {
+        mKeyboardListener->onKeyPressed = CC_CALLBACK_2(GameScene::onKeyPressed, this);
+        mKeyboardListener->onKeyReleased = CC_CALLBACK_2(GameScene::onKeyReleased, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mKeyboardListener, this);
+    }
 
-    auto listener = EventListenerMouse::create();
-    listener->onMouseMove = CC_CALLBACK_1(GameScene::onMouseMove, this);
-    listener->onMouseDown = CC_CALLBACK_1(GameScene::onMouseDown, this);
-    listener->onMouseUp = CC_CALLBACK_1(GameScene::onMouseUp, this);
-    _eventDispatcher->addEventListenerWithSceneGraphPriority(listener, this);
+    mMouseListener = EventListenerMouse::create();
+    if (mMouseListener)
+    {
+        mMouseListener->onMouseMove = CC_CALLBACK_1(GameScene::onMouseMove, this);
+        mMouseListener->onMouseDown = CC_CALLBACK_1(GameScene::onMouseDown, this);
+        mMouseListener->onMouseUp = CC_CALLBACK_1(GameScene::onMouseUp, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mMouseListener, this);
+    }
 
-    auto contactListener = EventListenerPhysicsContact::create();
-    contactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
-    contactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
-    contactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
-    _eventDispatcher->addEventListenerWithSceneGraphPriority(contactListener, this);
+    mContactListener = EventListenerPhysicsContact::create();
+    if (mContactListener)
+    {
+        mContactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
+        mContactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
+        mContactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mContactListener, this);
+    }
 
     schedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid), 1.5f);
 
@@ -409,7 +422,7 @@ Vec2 GameScene::calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, floa
     return newVelocity;
 }
 
-void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const Vec2 aContactPoint)
+void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody)
 {
     auto index = aAsteroidData.tag;
     if (index == 0)
@@ -488,24 +501,10 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
     if (!bodyA || !bodyB)
         return false;
 
-    auto contactPoint = aContact.getContactData()->points[0];
-
-    if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == spaceshipBitMask)
+    if ((bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == spaceshipBitMask)
+        || (bodyA->getCategoryBitmask() == spaceshipBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
     {
-        // gameover
-    }
-    else if (bodyA->getCategoryBitmask() == spaceshipBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
-    {
-        // gameover
-    }
-    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
-    {
-        //splitAsteroid(bodyA, bodyB, contactPoint);
-        //splitAsteroid(bodyB, bodyA, contactPoint);
-        //if (bodyA->getNode())
-        //    bodyA->getNode()->removeFromParent();
-        //if (bodyB->getNode())
-        //    bodyB->getNode()->removeFromParent();
+        gameOver(0, 0, false);
     }
     else if ((bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == bulletBitMask)
         || (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
@@ -516,7 +515,7 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
         {
             sAsteroidContactData asteroidData(*asteroid, asteroid->getNode()->getTag());
             sContactData bulletData(*bullet);
-            mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, bulletData, contactPoint);
+            mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, bulletData);
             asteroid->getNode()->removeFromParent();
             bullet->getNode()->removeFromParent();
         }
@@ -528,6 +527,15 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
         {
             bullet->getNode()->removeFromParent();
         }
+    }
+    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
+    {
+        //splitAsteroid(bodyA, bodyB, contactPoint);
+        //splitAsteroid(bodyB, bodyA, contactPoint);
+        //if (bodyA->getNode())
+        //    bodyA->getNode()->removeFromParent();
+        //if (bodyB->getNode())
+        //    bodyB->getNode()->removeFromParent();
     }
 
     return true;
@@ -577,6 +585,7 @@ void GameScene::shootBullet(Vec2 aTarget)
             auto bulletBody = PhysicsBody::createBox(bullet->getContentSize());
             if (bulletBody)
             {
+                bulletBody->setMass(mBulletConfig.mass);
                 bulletBody->setCategoryBitmask(bulletBitMask);
                 bulletBody->setCollisionBitmask(asteroidBitMask);
                 bulletBody->setContactTestBitmask(boundsBitmask | asteroidBitMask);
@@ -596,4 +605,31 @@ void GameScene::shootBullet(Vec2 aTarget)
             );
         }
     }
+}
+
+void GameScene::gameOver(int score, float time, bool isWin)
+{
+    auto gameOverLayer = GameOverLayer::create(score, time, isWin);
+    this->addChild(gameOverLayer, 10);
+    if (_physicsWorld)
+    {
+        _physicsWorld->setSpeed(0.0f);
+    }
+    if (mContactListener)
+    {
+        _eventDispatcher->removeEventListener(mContactListener);
+        mContactListener = nullptr;
+    }
+    if (mMouseListener)
+    {
+        _eventDispatcher->removeEventListener(mMouseListener);
+        mMouseListener = nullptr;
+    }
+    if (mKeyboardListener)
+    {
+        _eventDispatcher->removeEventListener(mKeyboardListener);
+        mKeyboardListener = nullptr;
+    }
+    unschedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid));
+    this->unscheduleUpdate();
 }

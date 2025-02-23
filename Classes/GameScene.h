@@ -4,7 +4,7 @@
 #include "cocos2d.h"
 #include <unordered_set>
 
-using namespace cocos2d;
+USING_NS_CC;
 
 class GameScene
     : public Scene
@@ -28,10 +28,12 @@ private:
 
     struct sBulletConfig
     {
+        float mass;
         float acceleration;
 
         sBulletConfig()
-            : acceleration(500.f)
+            : mass(1.f)
+            , acceleration(500.f)
         {
         }
     };
@@ -84,9 +86,14 @@ private:
     bool mIsCanShoot;
     std::map<float, sAsteroidStageConfig> mAsteroidStages;
     std::unordered_map<Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
+
     bool mIsPaused;
     Label* mPauseLabel;
     LayerColor* mBlackoutLayer;
+
+    EventListenerKeyboard* mKeyboardListener;
+    EventListenerMouse* mMouseListener;
+    EventListenerPhysicsContact* mContactListener;
 
 private:
     bool init() override;
@@ -108,10 +115,11 @@ private:
     void shootBullet(Vec2 aTarget);
     void adjustSpaceshipRotation();
     void spawnAsteroid(float);
-    void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const Vec2 aContactPoint);
+    void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody);
     static Vec2 calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2);
 
     void togglePause();
+    void gameOver(int aScore, float aTime, bool aIsWin);
 
 public:
     GameScene();
