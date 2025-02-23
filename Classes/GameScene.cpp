@@ -14,6 +14,9 @@ GameScene::GameScene()
     : mSpaceship(nullptr)
     , mIsCanShoot(true)
     , mIsMousePressed(false)
+    , mIsPaused(false)
+    , mPauseLabel(nullptr)
+    , mBlackoutLayer(nullptr)
 {
 
 }
@@ -281,12 +284,22 @@ void GameScene::update(float)
 
 void GameScene::onKeyPressed(EventKeyboard::KeyCode aKeyCode, Event* aEvent)
 {
-    mPressedKeys.insert(aKeyCode);
+    if (aKeyCode == EventKeyboard::KeyCode::KEY_ESCAPE)
+    {
+        togglePause();
+    }
+    else if (!mIsPaused)
+    {
+        mPressedKeys.insert(aKeyCode);
+    }
 }
 
 void GameScene::onKeyReleased(EventKeyboard::KeyCode aKeyCode, Event* aEvent)
 {
-    mPressedKeys.erase(aKeyCode);
+    if (!mIsPaused)
+    {
+        mPressedKeys.erase(aKeyCode);
+    }
 }
 
 void GameScene::onMouseMove(EventMouse* aEvent)
@@ -294,7 +307,10 @@ void GameScene::onMouseMove(EventMouse* aEvent)
     if (aEvent && mSpaceship)
     {
         mMousePosition = aEvent->getLocationInView();
-        adjustSpaceshipRotation();
+        if (!mIsPaused)
+        {
+            adjustSpaceshipRotation();
+        }
     }
 }
 
@@ -325,6 +341,59 @@ void GameScene::onMouseDown(EventMouse* aEvent)
 void GameScene::onMouseUp(EventMouse* aEvent)
 {
     mIsMousePressed = false;
+}
+
+void GameScene::togglePause()
+{
+    auto director = Director::getInstance();
+    if (mIsPaused)
+    {
+        if (mPauseLabel)
+        {
+            mPauseLabel->setVisible(false);
+        }
+        if (mBlackoutLayer)
+        {
+            mBlackoutLayer->setVisible(false);
+        }
+        director->resume();
+        if (_physicsWorld)
+        {
+            _physicsWorld->setSpeed(1.0f);
+        }
+        this->scheduleUpdate();
+    }
+    else
+    {
+        if (!mPauseLabel)
+        {
+            mPauseLabel = Label::createWithTTF("PAUSED", "fonts/Marker Felt.ttf", 48);
+            mPauseLabel->setPosition(Director::getInstance()->getVisibleSize() / 2);
+            this->addChild(mPauseLabel, 11);
+        }
+        if (mPauseLabel)
+        {
+            mPauseLabel->setVisible(true);
+        }
+        if (!mBlackoutLayer)
+        {
+            mBlackoutLayer = LayerColor::create(Color4B(0, 0, 0, 150));
+            mBlackoutLayer->setContentSize(Director::getInstance()->getVisibleSize());
+            mBlackoutLayer->setPosition(Vec2::ZERO);
+            this->addChild(mBlackoutLayer, 10);
+        }
+        if (mBlackoutLayer)
+        {
+            mBlackoutLayer->setVisible(true);
+        }
+        director->pause();
+        if (_physicsWorld)
+        {
+            _physicsWorld->setSpeed(0.0f);
+        }
+        this->unscheduleUpdate();
+    }
+    mIsPaused = !mIsPaused;
 }
 
 Vec2 GameScene::calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2)

@@ -84,6 +84,9 @@ private:
     bool mIsCanShoot;
     std::map<float, sAsteroidStageConfig> mAsteroidStages;
     std::unordered_map<Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
+    bool mIsPaused;
+    Label* mPauseLabel;
+    LayerColor* mBlackoutLayer;
 
 private:
     bool init() override;
@@ -107,6 +110,8 @@ private:
     void spawnAsteroid(float);
     void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const Vec2 aContactPoint);
     static Vec2 calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2);
+
+    void togglePause();
 
 public:
     GameScene();
