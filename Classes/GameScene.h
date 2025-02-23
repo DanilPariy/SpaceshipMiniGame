@@ -4,8 +4,10 @@
 #include "cocos2d.h"
 #include <unordered_set>
 
+using namespace cocos2d;
+
 class GameScene
-    : public cocos2d::Scene
+    : public Scene
 {
 private:
     struct sSpaceshipConfig
@@ -43,11 +45,11 @@ private:
 
     struct sContactData
     {
-        cocos2d::Vec2 position;
-        cocos2d::Vec2 velocity;
+        Vec2 position;
+        Vec2 velocity;
         float mass;
 
-        sContactData(cocos2d::PhysicsBody& aBody)
+        sContactData(PhysicsBody& aBody)
             : position(aBody.getPosition())
             , velocity(aBody.getVelocity())
             , mass(aBody.getMass())
@@ -62,7 +64,7 @@ private:
     {
         int tag;
 
-        sAsteroidContactData(cocos2d::PhysicsBody& aBody, const int aTag)
+        sAsteroidContactData(PhysicsBody& aBody, const int aTag)
             : sContactData(aBody)
             , tag(aTag)
         {
@@ -73,15 +75,15 @@ private:
     };
 
 private:
-    cocos2d::Sprite* mSpaceship;
-    std::unordered_set<cocos2d::EventKeyboard::KeyCode> mPressedKeys;
-    cocos2d::Vec2 mMousePosition;
+    Sprite* mSpaceship;
+    std::unordered_set<EventKeyboard::KeyCode> mPressedKeys;
+    Vec2 mMousePosition;
     sSpaceshipConfig mSpaceshipConfig;
     sBulletConfig mBulletConfig;
     bool mIsMousePressed;
     bool mIsCanShoot;
     std::map<float, sAsteroidStageConfig> mAsteroidStages;
-    std::unordered_map<cocos2d::Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
+    std::unordered_map<Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
 
 private:
     bool init() override;
@@ -91,25 +93,26 @@ private:
     void createScreenBounds();
     void update(float aDelta) override;
 
-    void onKeyPressed(cocos2d::EventKeyboard::KeyCode aKeyCode, cocos2d::Event* aEvent);
-    void onKeyReleased(cocos2d::EventKeyboard::KeyCode aKeyCode, cocos2d::Event* aEvent);
-    void onMouseMove(cocos2d::EventMouse* aEvent);
-    void onMouseDown(cocos2d::EventMouse* aEvent);
-    void onMouseUp(cocos2d::EventMouse* aEvent);
-    bool onContactBegin(cocos2d::PhysicsContact& aCntact);
-    bool onContactSeparate(cocos2d::PhysicsContact& aContact);
-    bool onContactPreSolve(cocos2d::PhysicsContact& aContact, cocos2d::PhysicsContactPreSolve& aSolve);
+    void onKeyPressed(EventKeyboard::KeyCode aKeyCode, Event* aEvent);
+    void onKeyReleased(EventKeyboard::KeyCode aKeyCode, Event* aEvent);
+    void onMouseMove(EventMouse* aEvent);
+    void onMouseDown(EventMouse* aEvent);
+    void onMouseUp(EventMouse* aEvent);
+    bool onContactBegin(PhysicsContact& aCntact);
+    bool onContactSeparate(PhysicsContact& aContact);
+    bool onContactPreSolve(PhysicsContact& aContact, PhysicsContactPreSolve& aSolve);
 
-    void shootBullet(cocos2d::Vec2 aTarget);
+    void shootBullet(Vec2 aTarget);
     void adjustSpaceshipRotation();
     void spawnAsteroid(float);
-    void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const cocos2d::Vec2 aContactPoint);
+    void splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const Vec2 aContactPoint);
+    static Vec2 calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2);
 
 public:
     GameScene();
     virtual ~GameScene();
 
-    static cocos2d::Scene* createScene();
+    static Scene* createScene();
 };
 
 #endif // __GAME_SCENE_H__

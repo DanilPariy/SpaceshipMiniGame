@@ -322,66 +322,56 @@ void GameScene::onMouseDown(EventMouse* aEvent)
     }
 }
 
-void GameScene::onMouseUp(cocos2d::EventMouse* aEvent)
+void GameScene::onMouseUp(EventMouse* aEvent)
 {
     mIsMousePressed = false;
 }
 
-void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const cocos2d::Vec2 aContactPoint)
+Vec2 GameScene::calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2)
+{
+    Vec2 dp = p1 - p2;
+    float dpLengthSq = dp.lengthSquared();
+    if (dpLengthSq == 0)
+        return v1;
+
+    Vec2 dv = v1 - v2;
+    float dot = dv.dot(dp);
+    Vec2 newVelocity = v1 - (2 * m2 / (m1 + m2)) * (dot / dpLengthSq) * dp;
+    return newVelocity;
+}
+
+void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody, const Vec2 aContactPoint)
 {
     auto index = aAsteroidData.tag;
     if (index == 0)
         return;
 
     index--;
-    auto stage = std::next(mAsteroidStages.begin(), index);
-    auto scale = stage->second.scale;
-    auto mass = stage->second.mass;
+    const auto stage = std::next(mAsteroidStages.begin(), index);
+    const auto scale = stage->second.scale;
+    const auto mass = stage->second.mass;
 
-    Vec2 asteroidVelocity = aAsteroidData.velocity;
-    Vec2 v2 = aOtherBody.velocity;
-    float asteroidMass = aAsteroidData.mass;
-    float m2 = aOtherBody.mass;
-    Vec2 asteroidPosition = aAsteroidData.position;
-    Vec2 p2 = aOtherBody.position;
+    const Vec2 asteroidPosition = aAsteroidData.position;
+    const Vec2 asteroidVelocityAfterCollision = calculateVelocityAfterCollision(
+        aAsteroidData.velocity, aOtherBody.velocity, aAsteroidData.mass, aOtherBody.mass, asteroidPosition, aOtherBody.position);
 
-    auto calculateVelocityAfterCollision = [](Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2)
-    {
-        Vec2 dp = p1 - p2;
-        float dpLengthSq = dp.lengthSquared();
-        if (dpLengthSq == 0)
-            return v1;
+    float angle45 = CC_DEGREES_TO_RADIANS(45.0f);
+    auto velocity1 = asteroidVelocityAfterCollision.rotate(Vec2::forAngle(angle45)) / 2.f;
+    auto velocity2 = asteroidVelocityAfterCollision.rotate(Vec2::forAngle(-angle45)) / 2.f;
 
-        Vec2 dv = v1 - v2;
-        float dot = dv.dot(dp);
-        Vec2 newVelocity = v1 - (2 * m2 / (m1 + m2)) * (dot / dpLengthSq) * dp;
-        return newVelocity;
-    };
-
-    Vec2 velocity1 = calculateVelocityAfterCollision(asteroidVelocity, v2, asteroidMass, m2, asteroidPosition, p2);
-    Vec2 velocity2 = calculateVelocityAfterCollision(v2, asteroidVelocity, m2, asteroidMass, p2, asteroidPosition);
-
-    const Vec2 contactVector{ Vec2(aContactPoint - asteroidPosition).getNormalized() };
-    const Vec2 normal(-contactVector.y, contactVector.x);
-
-    auto createSmallAsteroid = [this, scale, index, normal, asteroidPosition, mass](const Vec2 aVelocity, const bool aIsAddNormal)
+    auto createSmallAsteroid = [](const float aScale, const int aIndex, const float aMass, const Vec2 aVelocity) -> Sprite*
     {
         auto smallAsteroid = Sprite::create("asteroid.png");
         if (smallAsteroid)
         {
-            const float spacingCoef = 1.1f;
-            smallAsteroid->setScale(scale);
-            smallAsteroid->setTag(index);
-            auto halfWidth = smallAsteroid->getContentSize().width / 2;
-            auto pos = asteroidPosition + halfWidth * normal * spacingCoef * (aIsAddNormal ? 1 : -1);
-            smallAsteroid->setPosition(pos);
-            this->addChild(smallAsteroid);
-            auto body = PhysicsBody::createCircle(halfWidth);
+            smallAsteroid->setScale(aScale);
+            smallAsteroid->setTag(aIndex);
+            auto body = PhysicsBody::createCircle(smallAsteroid->getContentSize().width / 2);
             if (body)
             {
                 body->setDynamic(true);
                 body->setGravityEnable(false);
-                body->setMass(mass);
+                body->setMass(aMass);
                 body->setCategoryBitmask(asteroidBitMask);
                 body->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
                 body->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
@@ -389,13 +379,24 @@ void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData a
                 smallAsteroid->setPhysicsBody(body);
             }
         }
+        return smallAsteroid;
     };
 
-    createSmallAsteroid(velocity1, true);
-    createSmallAsteroid(velocity2, false);
+    auto first = createSmallAsteroid(scale, index, mass, velocity1);
+    auto second = createSmallAsteroid(scale, index, mass, velocity2);
+    if (first && second)
+    {
+        float offset = first->getContentSize().width / (2 * std::sin(angle45));
+        auto position1 = asteroidPosition + velocity1.getNormalized() * offset;
+        auto position2 = asteroidPosition + velocity2.getNormalized() * offset;
+        first->setPosition(position1);
+        second->setPosition(position2);
+        addChild(first);
+        addChild(second);
+    }
 }
 
-bool GameScene::onContactPreSolve(cocos2d::PhysicsContact& aContact, cocos2d::PhysicsContactPreSolve& aSolve)
+bool GameScene::onContactPreSolve(PhysicsContact& aContact, PhysicsContactPreSolve& aSolve)
 {
     if (!aContact.getShapeA() || !aContact.getShapeB())
         return false;
@@ -406,7 +407,7 @@ bool GameScene::onContactPreSolve(cocos2d::PhysicsContact& aContact, cocos2d::Ph
     return true;
 }
 
-bool GameScene::onContactBegin(cocos2d::PhysicsContact& aContact)
+bool GameScene::onContactBegin(PhysicsContact& aContact)
 {
     auto shapeA = aContact.getShapeA();
     auto shapeB = aContact.getShapeB();
@@ -437,49 +438,33 @@ bool GameScene::onContactBegin(cocos2d::PhysicsContact& aContact)
         //if (bodyB->getNode())
         //    bodyB->getNode()->removeFromParent();
     }
-    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == bulletBitMask)
+    else if ((bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == bulletBitMask)
+        || (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
     {
-        if (bodyA->getNode() && bodyB->getNode())
+        auto asteroid = bodyA->getCategoryBitmask() == asteroidBitMask ? bodyA : bodyB;
+        auto bullet = bodyA->getCategoryBitmask() == bulletBitMask ? bodyA : bodyB;
+        if (asteroid->getNode() && bullet->getNode())
         {
-            sAsteroidContactData asteroidData(*bodyA, bodyA->getNode()->getTag());
-            sContactData otherData(*bodyB);
-            mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, otherData, contactPoint);
-            bodyA->getNode()->removeFromParent();
-            bodyB->getNode()->removeFromParent();
+            sAsteroidContactData asteroidData(*asteroid, asteroid->getNode()->getTag());
+            sContactData bulletData(*bullet);
+            mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, bulletData, contactPoint);
+            asteroid->getNode()->removeFromParent();
+            bullet->getNode()->removeFromParent();
         }
-        else if (bodyA->getNode())
+        else if (asteroid->getNode())
         {
-            bodyA->getNode()->removeFromParent();
+            asteroid->getNode()->removeFromParent();
         }
-        else if (bodyB->getNode())
+        else if (bullet->getNode())
         {
-            bodyB->getNode()->removeFromParent();
-        }
-    }
-    else if (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
-    {
-        if (bodyA->getNode() && bodyB->getNode())
-        {
-            sAsteroidContactData asteroidData(*bodyB, bodyB->getNode()->getTag());
-            sContactData otherData(*bodyA);
-            mDestroyedAsteroidsCallbacks[bodyB->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, otherData, contactPoint);
-            bodyA->getNode()->removeFromParent();
-            bodyB->getNode()->removeFromParent();
-        }
-        else if (bodyA->getNode())
-        {
-            bodyA->getNode()->removeFromParent();
-        }
-        else if (bodyB->getNode())
-        {
-            bodyB->getNode()->removeFromParent();
+            bullet->getNode()->removeFromParent();
         }
     }
 
     return true;
 }
 
-bool GameScene::onContactSeparate(cocos2d::PhysicsContact& aContact)
+bool GameScene::onContactSeparate(PhysicsContact& aContact)
 {
     auto shapeA = aContact.getShapeA();
     auto shapeB = aContact.getShapeB();
