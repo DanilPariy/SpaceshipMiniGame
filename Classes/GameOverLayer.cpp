@@ -50,7 +50,7 @@ bool GameOverLayer::init(int aScore, float aTime, bool aIsWin)
     scoreLabel->setPosition(Vec2(origin.x + visibleSize.width / 2, origin.y + visibleSize.height * 0.6f));
     this->addChild(scoreLabel);
 
-    std::string timeText = "Time: " + std::to_string(aTime) + " seconds";
+    std::string timeText = __String::createWithFormat("Time: %.1f seconds", aTime)->getCString();
     auto timeLabel = Label::createWithTTF(timeText, "fonts/Marker Felt.ttf", 36);
     timeLabel->setPosition(Vec2(origin.x + visibleSize.width / 2, origin.y + visibleSize.height * 0.5f));
     this->addChild(timeLabel);

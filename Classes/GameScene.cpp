@@ -97,6 +97,35 @@ void GameScene::parseConfig()
             }
         }
     }
+
+    if (document.HasMember("stages") && document["stages"].IsArray())
+    {
+        const auto& stagesConfig = document["stages"];
+        for (auto it = stagesConfig.Begin(); it != stagesConfig.End(); it++)
+        {
+            const auto& stageObj = *it;
+            if (stageObj.IsObject()
+                && stageObj.HasMember("center_min_x")
+                && stageObj.HasMember("center_max_x")
+                && stageObj.HasMember("center_min_y")
+                && stageObj.HasMember("center_max_y")
+                && stageObj.HasMember("radius_min")
+                && stageObj.HasMember("radius_max"))
+            {
+                sStageConfig config(
+                    {
+                        .centerMinX = stageObj["center_min_x"].GetFloat()
+                        , .centerMaxX = stageObj["center_max_x"].GetFloat()
+                        , .centerMinY = stageObj["center_min_y"].GetFloat()
+                        , .centerMaxY = stageObj["center_max_y"].GetFloat()
+                        , .radiusMin = stageObj["radius_min"].GetFloat()
+                        , .radiusMax = stageObj["radius_max"].GetFloat()
+                    }
+                );
+                mStages.push_back(config);
+            }
+        }
+    }
 }
 
 bool GameScene::init()
@@ -516,6 +545,7 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
             sAsteroidContactData asteroidData(*asteroid, asteroid->getNode()->getTag());
             sContactData bulletData(*bullet);
             mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, bulletData);
+            createExplosion(asteroid->getPosition(), asteroid->getNode()->getContentSize() * asteroid->getNode()->getScale());
             asteroid->getNode()->removeFromParent();
             bullet->getNode()->removeFromParent();
         }
@@ -632,4 +662,19 @@ void GameScene::gameOver(int score, float time, bool isWin)
     }
     unschedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid));
     this->unscheduleUpdate();
+}
+
+void GameScene::createExplosion(const Vec2& aPosition, const Size& aAsteroidSize)
+{
+    auto explosion = Sprite::create("explosion.png");
+    explosion->setPosition(aPosition);
+    auto finalScale = aAsteroidSize.width / explosion->getContentSize().width;
+    explosion->setScale(finalScale);
+    this->addChild(explosion, 2);
+
+    auto fadeOut = FadeOut::create(0.4f);
+    auto remove = RemoveSelf::create();
+    auto sequence = Sequence::create(fadeOut, remove, nullptr);
+
+    explosion->runAction(sequence);
 }

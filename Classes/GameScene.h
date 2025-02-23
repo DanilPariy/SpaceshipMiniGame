@@ -76,6 +76,16 @@ private:
         }
     };
 
+    struct sStageConfig
+    {
+        float centerMinX;
+        float centerMaxX;
+        float centerMinY;
+        float centerMaxY;
+        float radiusMin;
+        float radiusMax;
+    };
+
 private:
     Sprite* mSpaceship;
     std::unordered_set<EventKeyboard::KeyCode> mPressedKeys;
@@ -86,6 +96,7 @@ private:
     bool mIsCanShoot;
     std::map<float, sAsteroidStageConfig> mAsteroidStages;
     std::unordered_map<Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
+    std::vector<sStageConfig> mStages;
 
     bool mIsPaused;
     Label* mPauseLabel;
@@ -101,6 +112,7 @@ private:
     void createBackground();
     void createSpaceship();
     void createScreenBounds();
+    void createExplosion(const Vec2& aPosition, const Size& aAsteroidSize);
     void update(float aDelta) override;
 
     void onKeyPressed(EventKeyboard::KeyCode aKeyCode, Event* aEvent);

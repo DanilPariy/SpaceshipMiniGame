@@ -25,5 +25,31 @@
             "mass": 200.0,
             "points": 16
         }
+    ],
+    "stages": [
+        {
+            "center_min_x": 180.0,
+            "center_max_x": 844.0,
+            "center_min_y": 180.0,
+            "center_max_y": 588.0,
+            "radius_min": 210.0,
+            "radius_max": 300.0
+        },
+        {
+            "center_min_x": 180.0,
+            "center_max_x": 844.0,
+            "center_min_y": 180.0,
+            "center_max_y": 588.0,
+            "radius_min": 190.0,
+            "radius_max": 270.0
+        },
+        {
+            "center_min_x": 180.0,
+            "center_max_x": 844.0,
+            "center_min_y": 180.0,
+            "center_max_y": 588.0,
+            "radius_min": 170.0,
+            "radius_max": 240.0
+        }
     ]
 }
