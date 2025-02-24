@@ -134,7 +134,7 @@ private:
     void createSpaceship();
     void createScreenBounds();
     void createListeners();
-    void createExplosion(const Vec2& aPosition, const Size& aAsteroidSize);
+    void createExplosion(const std::string& aAnimationName, const Vec2& aPosition);
     void update(float aDelta) override;
     void updateScoreLabel();
     void updateTimeLeftLabel();

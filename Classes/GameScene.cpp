@@ -10,6 +10,64 @@ const int asteroidBitMask = 0x02;
 const int bulletBitMask = 0x04;
 const int boundsBitmask = 0x08;
 
+const char* bulletExpl = "expl_11";
+const int bulletExplFrames = 24;
+const char* asteroidExpl = "expl_11";
+const int asteroidExplFrames = 24;
+
+void loadFramesFromJSON(const std::string& aJsonFile, const std::string& aTextureFile)
+{
+    auto texture = Director::getInstance()->getTextureCache()->addImage(aTextureFile);
+    if (!texture)
+        return;
+
+    std::string jsonContent = FileUtils::getInstance()->getStringFromFile(aJsonFile);
+
+    rapidjson::Document document;
+    document.Parse(jsonContent.c_str());
+
+    if (document.HasParseError() || !document.HasMember("frames"))
+        return;
+
+    const rapidjson::Value& frames = document["frames"];
+    for (auto it = frames.MemberBegin(); it != frames.MemberEnd(); ++it)
+    {
+        std::string frameName = it->name.GetString();
+        const rapidjson::Value& frameData = it->value["frame"];
+
+        float x = frameData["x"].GetFloat();
+        float y = frameData["y"].GetFloat();
+        float w = frameData["w"].GetFloat();
+        float h = frameData["h"].GetFloat();
+
+        auto spriteFrame = SpriteFrame::createWithTexture(texture, Rect(x, y, w, h));
+        if (spriteFrame)
+        {
+            SpriteFrameCache::getInstance()->addSpriteFrame(spriteFrame, frameName);
+        }
+    }
+}
+
+void loadAnimation(const std::string& aName, unsigned aFramesNumber)
+{
+    Vector<SpriteFrame*> frames;
+    for (int i = 0; i < aFramesNumber; i++)
+    {
+        std::string frameName = StringUtils::format("%s_%04d.png", aName.c_str(), i);
+        auto frame = SpriteFrameCache::getInstance()->getSpriteFrameByName(frameName);
+        if (frame)
+        {
+            frames.pushBack(frame);
+        }
+    }
+
+    if (!frames.empty())
+    {
+        auto animation = Animation::createWithSpriteFrames(frames, 1.0f / 60);
+        AnimationCache::getInstance()->addAnimation(animation, aName);
+    }
+}
+
 GameScene::GameScene()
     : mSpaceship(nullptr)
     , mIsCanShoot(true)
@@ -78,7 +136,7 @@ void GameScene::parseConfig()
     if (document.HasMember("bullet") && document["bullet"].IsObject())
     {
         const auto& bulletJson = document["bullet"];
-        parseFloat(bulletJson, "acceleration", mBulletConfig.velocity);
+        parseFloat(bulletJson, "velocity", mBulletConfig.velocity);
         parseFloat(bulletJson, "mass", mBulletConfig.mass);
     }
 
@@ -152,6 +210,7 @@ bool GameScene::init()
     }
 
     mGameStartTime = std::chrono::steady_clock::now();
+
     parseConfig();
     createScreenBounds();
     createBackground();
@@ -160,6 +219,10 @@ bool GameScene::init()
     switchStage();
     updateScoreLabel();
     updateTimeLeftLabel();
+
+    loadFramesFromJSON("explosions.json", "explosions.png");
+    loadAnimation(bulletExpl, bulletExplFrames);
+    loadAnimation(asteroidExpl, asteroidExplFrames);
 
     schedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid), 1.5f);
 
@@ -357,7 +420,7 @@ void GameScene::update(float aDelta)
 
     if (mCurrentStage && mSpaceship)
     {
-        cocos2d::Vec2 shipPosition = mSpaceship->getPosition();
+        Vec2 shipPosition = mSpaceship->getPosition();
         float distance = shipPosition.distance(Vec2(mCurrentStage->centerX, mCurrentStage->centerY));
         if (distance <= mCurrentStage->radius - mSpaceship->getContentSize().width / 2)
         {
@@ -379,17 +442,17 @@ void GameScene::updateScoreLabel()
 {
     if (!mScoreLabel)
     {
-        mScoreLabel = cocos2d::Label::createWithTTF("Score: 0", "fonts/arial.ttf", 24);
+        mScoreLabel = Label::createWithTTF("Score: 0", "fonts/Marker Felt.ttf", 24);
         if (mScoreLabel)
         {
-            mScoreLabel->setAnchorPoint(cocos2d::Vec2(0, 1));
-            mScoreLabel->setPosition(cocos2d::Vec2(10, Director::getInstance()->getVisibleSize().height - 10));
+            mScoreLabel->setAnchorPoint(Vec2(0, 1));
+            mScoreLabel->setPosition(Vec2(10, Director::getInstance()->getVisibleSize().height - 10));
             this->addChild(mScoreLabel);
         }
     }
     else
     {
-        mScoreLabel->setString(cocos2d::StringUtils::format("Score: %d", mScore));
+        mScoreLabel->setString(StringUtils::format("Score: %d", mScore));
     }
 }
 
@@ -399,18 +462,18 @@ void GameScene::updateTimeLeftLabel()
     {
         if (!mTimeLeftLabel && mScoreLabel)
         {
-            mTimeLeftLabel = cocos2d::Label::createWithTTF("Time left: 0.0", "fonts/arial.ttf", 24);
+            mTimeLeftLabel = Label::createWithTTF("Time left: 0.0", "fonts/Marker Felt.ttf", 24);
             if (mTimeLeftLabel)
             {
-                mTimeLeftLabel->setAnchorPoint(cocos2d::Vec2(0, 1)); // Прив'язка до лівого верхнього кута
-                mTimeLeftLabel->setPosition(mScoreLabel->getPosition() - cocos2d::Vec2(0, mScoreLabel->getContentSize().height + 5));
+                mTimeLeftLabel->setAnchorPoint(Vec2(0, 1)); // Прив'язка до лівого верхнього кута
+                mTimeLeftLabel->setPosition(mScoreLabel->getPosition() - Vec2(0, mScoreLabel->getContentSize().height + 5));
                 this->addChild(mTimeLeftLabel);
             }
         }
         else
         {
             auto timeLeft = std::max(mCurrentStage->timeNeeded - mCurrentStage->timeInZone, 0.f);
-            mTimeLeftLabel->setString(cocos2d::StringUtils::format("Time left: %.1f", timeLeft));
+            mTimeLeftLabel->setString(StringUtils::format("Time left: %.1f", timeLeft));
         }
     }
 }
@@ -627,9 +690,13 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
         || (bodyA->getCategoryBitmask() == spaceshipBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
     {
         auto spaceship = bodyA->getCategoryBitmask() == spaceshipBitMask ? bodyA : bodyB;
-        if (spaceship && spaceship->getNode())
+        if (spaceship)
         {
-            createExplosion(spaceship->getPosition(), spaceship->getNode()->getContentSize() * spaceship->getNode()->getScale());
+            createExplosion(asteroidExpl, spaceship->getPosition());
+            if (spaceship->getNode())
+            {
+                spaceship->getNode()->removeFromParent();
+            }
         }
         gameOver(false);
     }
@@ -643,7 +710,7 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
             sAsteroidContactData asteroidData(*asteroid, asteroid->getNode()->getTag());
             sContactData bulletData(*bullet);
             mDestroyedAsteroidsCallbacks[bodyA->getNode()] = CC_CALLBACK_0(GameScene::splitAsteroid, this, asteroidData, bulletData);
-            createExplosion(asteroid->getPosition(), asteroid->getNode()->getContentSize() * asteroid->getNode()->getScale());
+            createExplosion(bulletExpl, asteroid->getPosition());
             asteroid->getNode()->removeFromParent();
             bullet->getNode()->removeFromParent();
         }
@@ -801,17 +868,17 @@ void GameScene::switchStage()
     }
 }
 
-void GameScene::createExplosion(const Vec2& aPosition, const Size& aAsteroidSize)
+void GameScene::createExplosion(const std::string& aAnimationName, const Vec2& aPosition)
 {
-    auto explosion = Sprite::create("explosion.png");
-    explosion->setPosition(aPosition);
-    auto finalScale = aAsteroidSize.width / explosion->getContentSize().width;
-    explosion->setScale(finalScale);
-    this->addChild(explosion, 2);
+    auto animation = AnimationCache::getInstance()->getAnimation(aAnimationName);
+    if (animation)
+    {
+        auto explosion = Sprite::createWithSpriteFrame(animation->getFrames().front()->getSpriteFrame());
+        explosion->setPosition(aPosition);
+        this->addChild(explosion, 2);
 
-    auto fadeOut = FadeOut::create(0.4f);
-    auto remove = RemoveSelf::create();
-    auto sequence = Sequence::create(fadeOut, remove, nullptr);
-
-    explosion->runAction(sequence);
+        auto animate = Animate::create(animation);
+        auto remove = RemoveSelf::create();
+        explosion->runAction(Sequence::createWithTwoActions(animate, remove));
+    }
 }
