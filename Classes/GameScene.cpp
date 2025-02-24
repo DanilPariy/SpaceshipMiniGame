@@ -206,7 +206,7 @@ bool GameScene::init()
     if (_physicsWorld)
     {
         _physicsWorld->setGravity(Vec2(0, 0));
-        _physicsWorld->setDebugDrawMask(PhysicsWorld::DEBUGDRAW_ALL);
+        _physicsWorld->setDebugDrawMask(0);// PhysicsWorld::DEBUGDRAW_ALL);
     }
 
     mGameStartTime = std::chrono::steady_clock::now();
