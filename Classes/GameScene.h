@@ -3,6 +3,7 @@
 
 #include "cocos2d.h"
 #include <unordered_set>
+#include <chrono>
 
 USING_NS_CC;
 
@@ -29,11 +30,11 @@ private:
     struct sBulletConfig
     {
         float mass;
-        float acceleration;
+        float velocity;
 
         sBulletConfig()
             : mass(1.f)
-            , acceleration(500.f)
+            , velocity(500.f)
         {
         }
     };
@@ -43,6 +44,8 @@ private:
         float scale;
         float mass;
         unsigned points;
+        float velocityMin;
+        float velocityMax;
     };
 
     struct sContactData
@@ -84,6 +87,18 @@ private:
         float centerMaxY;
         float radiusMin;
         float radiusMax;
+        unsigned timeMin;
+        unsigned timeMax;
+    };
+
+    struct sStage
+    {
+        const sStageConfig* config;
+        float centerX;
+        float centerY;
+        float radius;
+        unsigned timeNeeded;
+        float timeInZone;
     };
 
 private:
@@ -96,7 +111,7 @@ private:
     bool mIsCanShoot;
     std::map<float, sAsteroidStageConfig> mAsteroidStages;
     std::unordered_map<Node*, std::function<void()>> mDestroyedAsteroidsCallbacks;
-    std::vector<sStageConfig> mStages;
+    std::vector<sStageConfig> mStageConfigs;
 
     bool mIsPaused;
     Label* mPauseLabel;
@@ -106,14 +121,23 @@ private:
     EventListenerMouse* mMouseListener;
     EventListenerPhysicsContact* mContactListener;
 
+    std::chrono::time_point<std::chrono::steady_clock> mGameStartTime;
+    std::unique_ptr<sStage> mCurrentStage;
+    unsigned mScore;
+    Label* mScoreLabel;
+    Label* mTimeLeftLabel;
+
 private:
     bool init() override;
     void parseConfig();
     void createBackground();
     void createSpaceship();
     void createScreenBounds();
+    void createListeners();
     void createExplosion(const Vec2& aPosition, const Size& aAsteroidSize);
     void update(float aDelta) override;
+    void updateScoreLabel();
+    void updateTimeLeftLabel();
 
     void onKeyPressed(EventKeyboard::KeyCode aKeyCode, Event* aEvent);
     void onKeyReleased(EventKeyboard::KeyCode aKeyCode, Event* aEvent);
@@ -131,7 +155,8 @@ private:
     static Vec2 calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, float m2, Vec2 p1, Vec2 p2);
 
     void togglePause();
-    void gameOver(int aScore, float aTime, bool aIsWin);
+    void gameOver(bool aIsWin);
+    void switchStage();
 
 public:
     GameScene();

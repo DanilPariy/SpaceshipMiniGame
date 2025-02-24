@@ -1,4 +1,4 @@
-#include "GameScene.h"
+п»ї#include "GameScene.h"
 
 #include "json/document.h"
 #include "json/filereadstream.h"
@@ -20,6 +20,10 @@ GameScene::GameScene()
     , mContactListener(nullptr)
     , mMouseListener(nullptr)
     , mKeyboardListener(nullptr)
+    , mCurrentStage(nullptr)
+    , mScore(0)
+    , mScoreLabel(nullptr)
+    , mTimeLeftLabel(nullptr)
 {
 
 }
@@ -74,7 +78,7 @@ void GameScene::parseConfig()
     if (document.HasMember("bullet") && document["bullet"].IsObject())
     {
         const auto& bulletJson = document["bullet"];
-        parseFloat(bulletJson, "acceleration", mBulletConfig.acceleration);
+        parseFloat(bulletJson, "acceleration", mBulletConfig.velocity);
         parseFloat(bulletJson, "mass", mBulletConfig.mass);
     }
 
@@ -84,13 +88,20 @@ void GameScene::parseConfig()
         for (auto it = asteroidConfig.Begin(); it != asteroidConfig.End(); it++)
         {
             const auto& stageObj = *it;
-            if (stageObj.IsObject() && stageObj.HasMember("scale") && stageObj.HasMember("mass") && stageObj.HasMember("points"))
+            if (stageObj.IsObject()
+                && stageObj.HasMember("scale")
+                && stageObj.HasMember("mass")
+                && stageObj.HasMember("points")
+                && stageObj.HasMember("velocity_min")
+                && stageObj.HasMember("velocity_max"))
             {
                 sAsteroidStageConfig config(
                     {
-                        .scale = stageObj["scale"].GetFloat(),
-                        .mass = stageObj["mass"].GetFloat(),
-                        .points = stageObj["points"].GetUint()
+                        .scale = stageObj["scale"].GetFloat()
+                        , .mass = stageObj["mass"].GetFloat()
+                        , .points = stageObj["points"].GetUint()
+                        , .velocityMin = stageObj["velocity_min"].GetFloat()
+                        , .velocityMax = stageObj["velocity_max"].GetFloat()
                     }
                 );
                 mAsteroidStages.insert(std::make_pair(config.scale, std::move(config)));
@@ -110,7 +121,9 @@ void GameScene::parseConfig()
                 && stageObj.HasMember("center_min_y")
                 && stageObj.HasMember("center_max_y")
                 && stageObj.HasMember("radius_min")
-                && stageObj.HasMember("radius_max"))
+                && stageObj.HasMember("radius_max")
+                && stageObj.HasMember("time_min")
+                && stageObj.HasMember("time_max"))
             {
                 sStageConfig config(
                     {
@@ -120,9 +133,11 @@ void GameScene::parseConfig()
                         , .centerMaxY = stageObj["center_max_y"].GetFloat()
                         , .radiusMin = stageObj["radius_min"].GetFloat()
                         , .radiusMax = stageObj["radius_max"].GetFloat()
+                        , .timeMin = stageObj["time_min"].GetUint()
+                        , .timeMax = stageObj["time_max"].GetUint()
                     }
                 );
-                mStages.push_back(config);
+                mStageConfigs.push_back(config);
             }
         }
     }
@@ -136,36 +151,15 @@ bool GameScene::init()
         _physicsWorld->setDebugDrawMask(PhysicsWorld::DEBUGDRAW_ALL);
     }
 
+    mGameStartTime = std::chrono::steady_clock::now();
     parseConfig();
     createScreenBounds();
     createBackground();
     createSpaceship();
-
-    mKeyboardListener = EventListenerKeyboard::create();
-    if (mKeyboardListener)
-    {
-        mKeyboardListener->onKeyPressed = CC_CALLBACK_2(GameScene::onKeyPressed, this);
-        mKeyboardListener->onKeyReleased = CC_CALLBACK_2(GameScene::onKeyReleased, this);
-        _eventDispatcher->addEventListenerWithSceneGraphPriority(mKeyboardListener, this);
-    }
-
-    mMouseListener = EventListenerMouse::create();
-    if (mMouseListener)
-    {
-        mMouseListener->onMouseMove = CC_CALLBACK_1(GameScene::onMouseMove, this);
-        mMouseListener->onMouseDown = CC_CALLBACK_1(GameScene::onMouseDown, this);
-        mMouseListener->onMouseUp = CC_CALLBACK_1(GameScene::onMouseUp, this);
-        _eventDispatcher->addEventListenerWithSceneGraphPriority(mMouseListener, this);
-    }
-
-    mContactListener = EventListenerPhysicsContact::create();
-    if (mContactListener)
-    {
-        mContactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
-        mContactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
-        mContactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
-        _eventDispatcher->addEventListenerWithSceneGraphPriority(mContactListener, this);
-    }
+    createListeners();
+    switchStage();
+    updateScoreLabel();
+    updateTimeLeftLabel();
 
     schedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid), 1.5f);
 
@@ -199,6 +193,35 @@ void GameScene::createScreenBounds()
     }
 
     this->addChild(edgeNode);
+}
+
+void GameScene::createListeners()
+{
+    mKeyboardListener = EventListenerKeyboard::create();
+    if (mKeyboardListener)
+    {
+        mKeyboardListener->onKeyPressed = CC_CALLBACK_2(GameScene::onKeyPressed, this);
+        mKeyboardListener->onKeyReleased = CC_CALLBACK_2(GameScene::onKeyReleased, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mKeyboardListener, this);
+    }
+
+    mMouseListener = EventListenerMouse::create();
+    if (mMouseListener)
+    {
+        mMouseListener->onMouseMove = CC_CALLBACK_1(GameScene::onMouseMove, this);
+        mMouseListener->onMouseDown = CC_CALLBACK_1(GameScene::onMouseDown, this);
+        mMouseListener->onMouseUp = CC_CALLBACK_1(GameScene::onMouseUp, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mMouseListener, this);
+    }
+
+    mContactListener = EventListenerPhysicsContact::create();
+    if (mContactListener)
+    {
+        mContactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
+        mContactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
+        mContactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
+        _eventDispatcher->addEventListenerWithSceneGraphPriority(mContactListener, this);
+    }
 }
 
 void GameScene::createBackground()
@@ -243,13 +266,12 @@ void GameScene::spawnAsteroid(float)
     auto asteroidSprite = Sprite::create("asteroid.png");
     if (asteroidSprite)
     {
-        auto index = RandomHelper::random_int(0u, mAsteroidStages.size() - 1);
+        const auto index = RandomHelper::random_int(0u, mAsteroidStages.size() - 1);
         auto stage = std::next(mAsteroidStages.begin(), index);
-        auto scale = stage->second.scale;
+        const auto scale = stage->second.scale;
         asteroidSprite->setScale(scale);
         asteroidSprite->setTag(index);
-        // Випадкова стартова позиція за межами екрану
-        Vec2 spawnPosition = Vec2(visibleSize.width * RandomHelper::random_int(0, 1), visibleSize.height * RandomHelper::random_int(0, 1));
+        const Vec2 spawnPosition = Vec2(visibleSize.width * RandomHelper::random_int(0, 1), visibleSize.height * RandomHelper::random_int(0, 1));
         asteroidSprite->setPosition(spawnPosition);
         this->addChild(asteroidSprite);
 
@@ -264,15 +286,25 @@ void GameScene::spawnAsteroid(float)
             asteroidBody->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
             asteroidBody->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
 
-            // Напрямок руху до центра екрану
-            Vec2 direction = (Vec2(visibleSize.width / 2, visibleSize.height / 2) - spawnPosition).getNormalized();
-            float speed = RandomHelper::random_real(100.0f, 250.0f);
+            Vec2 destination;
+            if (mCurrentStage)
+            {
+                const float radiusPart = RandomHelper::random_real(0.f, mCurrentStage->radius);
+                const auto directionFromCenter = Vec2::forAngle(RandomHelper::random_real(0.f, 1.f) * 2 * M_PI);
+                destination = Vec2(mCurrentStage->centerX, mCurrentStage->centerY) + directionFromCenter * radiusPart;
+            }
+            else
+            {
+                destination = Vec2(RandomHelper::random_real(0.f, visibleSize.width), RandomHelper::random_real(0.f, visibleSize.height));
+            }
+            const Vec2 direction = (destination - spawnPosition).getNormalized();
+            const float speed = RandomHelper::random_real(stage->second.velocityMin, stage->second.velocityMax);
             asteroidBody->setVelocity(direction * speed);
         }
     }
 }
 
-void GameScene::update(float)
+void GameScene::update(float aDelta)
 {
     if (mSpaceship)
     {
@@ -320,6 +352,65 @@ void GameScene::update(float)
         else
         {
             it++;
+        }
+    }
+
+    if (mCurrentStage && mSpaceship)
+    {
+        cocos2d::Vec2 shipPosition = mSpaceship->getPosition();
+        float distance = shipPosition.distance(Vec2(mCurrentStage->centerX, mCurrentStage->centerY));
+        if (distance <= mCurrentStage->radius - mSpaceship->getContentSize().width / 2)
+        {
+            mCurrentStage->timeInZone += aDelta;
+            if (mCurrentStage->timeInZone >= mCurrentStage->timeNeeded)
+            {
+                switchStage();
+            }
+        }
+        else
+        {
+            mCurrentStage->timeInZone = 0.f;
+        }
+        updateTimeLeftLabel();
+    }
+}
+
+void GameScene::updateScoreLabel()
+{
+    if (!mScoreLabel)
+    {
+        mScoreLabel = cocos2d::Label::createWithTTF("Score: 0", "fonts/arial.ttf", 24);
+        if (mScoreLabel)
+        {
+            mScoreLabel->setAnchorPoint(cocos2d::Vec2(0, 1));
+            mScoreLabel->setPosition(cocos2d::Vec2(10, Director::getInstance()->getVisibleSize().height - 10));
+            this->addChild(mScoreLabel);
+        }
+    }
+    else
+    {
+        mScoreLabel->setString(cocos2d::StringUtils::format("Score: %d", mScore));
+    }
+}
+
+void GameScene::updateTimeLeftLabel()
+{
+    if (mCurrentStage)
+    {
+        if (!mTimeLeftLabel && mScoreLabel)
+        {
+            mTimeLeftLabel = cocos2d::Label::createWithTTF("Time left: 0.0", "fonts/arial.ttf", 24);
+            if (mTimeLeftLabel)
+            {
+                mTimeLeftLabel->setAnchorPoint(cocos2d::Vec2(0, 1)); // РџСЂРёРІ'СЏР·РєР° РґРѕ Р»С–РІРѕРіРѕ РІРµСЂС…РЅСЊРѕРіРѕ РєСѓС‚Р°
+                mTimeLeftLabel->setPosition(mScoreLabel->getPosition() - cocos2d::Vec2(0, mScoreLabel->getContentSize().height + 5));
+                this->addChild(mTimeLeftLabel);
+            }
+        }
+        else
+        {
+            auto timeLeft = std::max(mCurrentStage->timeNeeded - mCurrentStage->timeInZone, 0.f);
+            mTimeLeftLabel->setString(cocos2d::StringUtils::format("Time left: %.1f", timeLeft));
         }
     }
 }
@@ -454,6 +545,8 @@ Vec2 GameScene::calculateVelocityAfterCollision(Vec2 v1, Vec2 v2, float m1, floa
 void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData aOtherBody)
 {
     auto index = aAsteroidData.tag;
+    mScore += std::next(mAsteroidStages.begin(), index)->second.points;
+    updateScoreLabel();
     if (index == 0)
         return;
 
@@ -533,7 +626,12 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
     if ((bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == spaceshipBitMask)
         || (bodyA->getCategoryBitmask() == spaceshipBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
     {
-        gameOver(0, 0, false);
+        auto spaceship = bodyA->getCategoryBitmask() == spaceshipBitMask ? bodyA : bodyB;
+        if (spaceship && spaceship->getNode())
+        {
+            createExplosion(spaceship->getPosition(), spaceship->getNode()->getContentSize() * spaceship->getNode()->getScale());
+        }
+        gameOver(false);
     }
     else if ((bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == bulletBitMask)
         || (bodyA->getCategoryBitmask() == bulletBitMask && bodyB->getCategoryBitmask() == asteroidBitMask))
@@ -610,7 +708,7 @@ void GameScene::shootBullet(Vec2 aTarget)
 
             Vec2 direction = aTarget - bullet->getPosition();
             direction.normalize();
-            Vec2 velocity = direction * mBulletConfig.acceleration;
+            Vec2 velocity = direction * mBulletConfig.velocity;
 
             auto bulletBody = PhysicsBody::createBox(bullet->getContentSize());
             if (bulletBody)
@@ -637,9 +735,11 @@ void GameScene::shootBullet(Vec2 aTarget)
     }
 }
 
-void GameScene::gameOver(int score, float time, bool isWin)
+void GameScene::gameOver(bool isWin)
 {
-    auto gameOverLayer = GameOverLayer::create(score, time, isWin);
+    auto gameOverTime = std::chrono::steady_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(gameOverTime - mGameStartTime).count();
+    auto gameOverLayer = GameOverLayer::create(mScore, elapsedTime / 1000.f, isWin);
     this->addChild(gameOverLayer, 10);
     if (_physicsWorld)
     {
@@ -662,6 +762,52 @@ void GameScene::gameOver(int score, float time, bool isWin)
     }
     unschedule(CC_SCHEDULE_SELECTOR(GameScene::spawnAsteroid));
     this->unscheduleUpdate();
+}
+
+void GameScene::switchStage()
+{
+    if (mStageConfigs.empty())
+        return;
+
+    auto nextStageConfigIt = mCurrentStage ? std::next(std::find_if(mStageConfigs.begin(), mStageConfigs.end(), [this](const auto& aStage) {return mCurrentStage->config == &aStage; })) : mStageConfigs.begin();
+    if (nextStageConfigIt == mStageConfigs.end())
+    {
+        gameOver(true);
+        return;
+    }
+
+    mCurrentStage = std::make_unique<sStage>(sStage
+        {
+            .config = &*nextStageConfigIt
+            , .centerX = RandomHelper::random_real(nextStageConfigIt->centerMinX, nextStageConfigIt->centerMaxX)
+            , .centerY = RandomHelper::random_real(nextStageConfigIt->centerMinY, nextStageConfigIt->centerMaxY)
+            , .radius = RandomHelper::random_real(nextStageConfigIt->radiusMin, nextStageConfigIt->radiusMax)
+            , .timeNeeded = RandomHelper::random_int(nextStageConfigIt->timeMin, nextStageConfigIt->timeMax)
+            , .timeInZone = 0.f
+        }
+    );
+
+    if (mCurrentStage)
+    {
+        auto drawNode = getChildByName<DrawNode*>("stage_circle");
+        if (drawNode)
+        {
+            drawNode->clear();
+        }
+        else
+        {
+            drawNode = DrawNode::create();
+            if (drawNode)
+            {
+                drawNode->setName("stage_circle");
+                this->addChild(drawNode);
+            }
+        }
+        if (drawNode)
+        {
+            drawNode->drawCircle(Vec2(mCurrentStage->centerX, mCurrentStage->centerY), mCurrentStage->radius, 0, 100, false, Color4F::GREEN);
+        }
+    }
 }
 
 void GameScene::createExplosion(const Vec2& aPosition, const Size& aAsteroidSize)
