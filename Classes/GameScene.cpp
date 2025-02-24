@@ -696,6 +696,7 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
             if (spaceship->getNode())
             {
                 spaceship->getNode()->removeFromParent();
+                mSpaceship = nullptr;
             }
         }
         gameOver(false);
