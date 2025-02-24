@@ -284,7 +284,7 @@ void GameScene::spawnAsteroid(float)
             asteroidBody->setMass(stage->second.mass);
             asteroidBody->setCategoryBitmask(asteroidBitMask);
             asteroidBody->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
-            asteroidBody->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+            asteroidBody->setContactTestBitmask(spaceshipBitMask | bulletBitMask);
 
             Vec2 destination;
             if (mCurrentStage)
@@ -578,7 +578,7 @@ void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData a
                 body->setMass(aMass);
                 body->setCategoryBitmask(asteroidBitMask);
                 body->setCollisionBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
-                body->setContactTestBitmask(spaceshipBitMask | bulletBitMask | asteroidBitMask);
+                body->setContactTestBitmask(spaceshipBitMask | bulletBitMask);
                 body->setVelocity(aVelocity);
                 smallAsteroid->setPhysicsBody(body);
             }
@@ -655,15 +655,6 @@ bool GameScene::onContactBegin(PhysicsContact& aContact)
         {
             bullet->getNode()->removeFromParent();
         }
-    }
-    else if (bodyA->getCategoryBitmask() == asteroidBitMask && bodyB->getCategoryBitmask() == asteroidBitMask)
-    {
-        //splitAsteroid(bodyA, bodyB, contactPoint);
-        //splitAsteroid(bodyB, bodyA, contactPoint);
-        //if (bodyA->getNode())
-        //    bodyA->getNode()->removeFromParent();
-        //if (bodyB->getNode())
-        //    bodyB->getNode()->removeFromParent();
     }
 
     return true;
