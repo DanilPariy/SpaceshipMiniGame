@@ -240,11 +240,7 @@ void GameScene::createScreenBounds()
     if (edgeNode)
     {
         edgeNode->setPosition(visibleSize.width / 2 + origin.x, visibleSize.height / 2 + origin.y);
-        auto edgeBody = PhysicsBody::createEdgeBox(
-            visibleSize,
-            PhysicsMaterial(1.0f, 0.0f, 0.0f),
-            3
-        );
+        auto edgeBody = PhysicsBody::createEdgeBox(visibleSize);
         if (edgeBody)
         {
             edgeBody->setDynamic(false);
@@ -282,7 +278,6 @@ void GameScene::createListeners()
     {
         mContactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
         mContactListener->onContactSeparate = CC_CALLBACK_1(GameScene::onContactSeparate, this);
-        mContactListener->onContactPreSolve = CC_CALLBACK_2(GameScene::onContactPreSolve, this);
         _eventDispatcher->addEventListenerWithSceneGraphPriority(mContactListener, this);
     }
 }
@@ -663,17 +658,6 @@ void GameScene::splitAsteroid(sAsteroidContactData aAsteroidData, sContactData a
     }
 }
 
-bool GameScene::onContactPreSolve(PhysicsContact& aContact, PhysicsContactPreSolve& aSolve)
-{
-    if (!aContact.getShapeA() || !aContact.getShapeB())
-        return false;
-
-    auto bodyA = aContact.getShapeA()->getBody();
-    auto bodyB = aContact.getShapeB()->getBody();
-
-    return true;
-}
-
 bool GameScene::onContactBegin(PhysicsContact& aContact)
 {
     auto shapeA = aContact.getShapeA();
@@ -794,11 +778,11 @@ void GameScene::shootBullet(Vec2 aTarget)
     }
 }
 
-void GameScene::gameOver(bool isWin)
+void GameScene::gameOver(bool aIsWin)
 {
     auto gameOverTime = std::chrono::steady_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(gameOverTime - mGameStartTime).count();
-    auto gameOverLayer = GameOverLayer::create(mScore, elapsedTime / 1000.f, isWin);
+    auto gameOverLayer = GameOverLayer::create(mScore, elapsedTime / 1000.f, aIsWin);
     this->addChild(gameOverLayer, 10);
     if (_physicsWorld)
     {

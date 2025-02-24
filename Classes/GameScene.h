@@ -146,7 +146,6 @@ private:
     void onMouseUp(EventMouse* aEvent);
     bool onContactBegin(PhysicsContact& aCntact);
     bool onContactSeparate(PhysicsContact& aContact);
-    bool onContactPreSolve(PhysicsContact& aContact, PhysicsContactPreSolve& aSolve);
 
     void shootBullet(Vec2 aTarget);
     void adjustSpaceshipRotation();
